@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 timestamp_utc,count,min_price,max_price,raw_text
 2026-04-19T05:11:17+00:00,,,,"error: Page.goto: Timeout 60000ms exceeded.
 Call log:
@@ -17,3 +18,7 @@ Call log:
 2026-04-19T17:40:01+00:00,1,,,1 ticket
 2026-04-19T18:58:24+00:00,1,,,1 ticket
 2026-04-19T19:47:19+00:00,1,,,1 ticket
+=======
+timestamp_utc,count,min_price,max_price,raw_text
+2026-04-19T20:16:08+00:00,171,85.0,821.0,Showing 10 of 171
+>>>>>>> 32bf257 (extractor: use Showing-of + price slider; add chart.png dashboard)

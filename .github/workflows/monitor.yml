@@ -29,11 +29,14 @@ jobs:
       - name: Run monitor
         run: python monitor.py
 
-      - name: Commit and push data.csv
+      - name: Regenerate chart
+        run: python plot.py
+
+      - name: Commit and push data + chart
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data.csv
+          git add data.csv chart.png
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else

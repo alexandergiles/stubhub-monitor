@@ -2,6 +2,8 @@
 
 Tracks the number of tickets listed on StubHub for one hardcoded event and logs the counts to `data.csv` over time.
 
+![Listings and price range over time](chart.png)
+
 ## What it does
 
 Every time `monitor.py` runs, it:
@@ -17,20 +19,19 @@ The event URL is hardcoded at the top of `monitor.py` (`EVENT_URL`). Edit it the
 ```bash
 pip install -r requirements.txt
 python -m playwright install chromium
-python monitor.py
+python monitor.py   # append a row to data.csv
+python plot.py      # regenerate chart.png
 ```
-
-A new row will be appended to `data.csv` (the file is created with a header on the first run). `last_next_data.json` will also be written — inspect it to find a stable count field for the tuning step below.
 
 ## GitHub Action
 
-`.github/workflows/monitor.yml` runs the scraper hourly via cron (`0 * * * *`) and on manual dispatch. It installs Playwright with `--with-deps` so the Ubuntu runner has the required system libraries, runs `monitor.py`, and commits any change to `data.csv` back to the repo using the `github-actions` bot identity.
+`.github/workflows/monitor.yml` runs hourly via cron (`0 * * * *`) plus manual dispatch. It installs Playwright with `--with-deps`, runs `monitor.py`, regenerates `chart.png` with `plot.py`, and commits both back to the repo using the `github-actions` bot identity.
 
 If the first run fails to push, enable **Settings → Actions → General → Workflow permissions → Read and write permissions** on the repo.
 
-## Tuning the extractor
+## How extraction works
 
-The regex-based count is brittle — StubHub's DOM changes often. The stable fix is to read directly from the `__NEXT_DATA__` JSON that Next.js embeds in the page. `last_next_data.json` is that blob from the last run; grep it for fields like `totalListings`, `availableTickets`, or `ticketCount` and wire `monitor.py` to read the count straight from that JSON path.
+The listings page renders client-side, so `monitor.py` waits for `load`, lets the page settle, scrolls to trigger any lazy content, then reads `body` text. It pulls the count from `"Showing N of M"` (or `"N listings"` as a fallback) and the min/max from the price slider (`Price per ticket $X $Y`). If StubHub changes that UI, these regexes are the thing to retune — search for the new strings in the rendered body.
 
 ## Note on StubHub ToS
 
