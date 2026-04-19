@@ -24,7 +24,7 @@ A new row will be appended to `data.csv` (the file is created with a header on t
 
 ## GitHub Action
 
-`.github/workflows/monitor.yml` runs the scraper every 30 minutes via cron (`*/30 * * * *`) and on manual dispatch. It installs Playwright with `--with-deps` so the Ubuntu runner has the required system libraries, runs `monitor.py`, and commits any change to `data.csv` back to the repo using the `github-actions` bot identity.
+`.github/workflows/monitor.yml` runs the scraper hourly via cron (`0 * * * *`) and on manual dispatch. It installs Playwright with `--with-deps` so the Ubuntu runner has the required system libraries, runs `monitor.py`, and commits any change to `data.csv` back to the repo using the `github-actions` bot identity.
 
 If the first run fails to push, enable **Settings → Actions → General → Workflow permissions → Read and write permissions** on the repo.
 
