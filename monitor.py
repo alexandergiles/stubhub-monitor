@@ -1,8 +1,9 @@
-"""Scrape a StubHub event page and append the listing count + price range to data.csv."""
+"""Scrape a StubHub event page: total + per-level listing counts + price range."""
 
 from __future__ import annotations
 
 import csv
+import json
 import re
 import sys
 from datetime import datetime, timezone
@@ -18,92 +19,119 @@ USER_AGENT = (
 VIEWPORT = {"width": 1440, "height": 900}
 
 DATA_CSV = Path(__file__).parent / "data.csv"
-CSV_COLUMNS = ["timestamp_utc", "count", "min_price", "max_price", "raw_text"]
 
-# "View 199 Listings" / "199 listings" / "Showing 10 of 199"
-LISTINGS_COUNT_REGEX = re.compile(r"(\d{1,6})\s+listings?\b", re.IGNORECASE)
-SHOWING_REGEX = re.compile(r"Showing\s+\d+\s+of\s+(\d{1,6})", re.IGNORECASE)
-# Price range slider: "Price per ticket\n$100\n$791+"
-PRICE_RANGE_REGEX = re.compile(
-    r"Price per ticket\s*\$\s*([\d,]+)\s*\$\s*([\d,]+)",
-    re.IGNORECASE,
+# Sphere ticket classes. Stable for this event's lifetime.
+# Source: /index-data -> ticketClasses[*].{ticketClassId, name}
+TICKET_CLASSES: list[tuple[int, str, str]] = [
+    (3788, "100 Level", "count_100"),
+    (3803, "200 Level", "count_200"),
+    (17690, "300 Level", "count_300"),
+    (8152, "400 Level", "count_400"),
+    (682, "Floor", "count_floor"),
+]
+
+CSV_COLUMNS = [
+    "timestamp_utc",
+    "total_listings",
+    *(col for _, _, col in TICKET_CLASSES),
+    "count_other",
+    "min_price",
+    "max_price",
+    "available_tickets",
+]
+
+INDEX_DATA_RE = re.compile(
+    r'<script id="index-data" type="application/json">(.+?)</script>',
+    re.DOTALL,
 )
 
 
-def _to_int(s: str) -> int:
-    return int(s.replace(",", ""))
+def fetch_index_data(page, url: str) -> dict | None:
+    """Navigate to url and return the parsed <script id="index-data"> JSON."""
+    captured: dict[str, str] = {}
 
+    def on_response(resp):
+        if resp.url == url and "html" not in captured:
+            try:
+                captured["html"] = resp.text()
+            except Exception as exc:
+                print(f"warning: failed to read response body for {url}: {exc}", file=sys.stderr)
 
-def _to_float(s: str) -> float:
-    return float(s.replace(",", ""))
+    page.on("response", on_response)
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+    except Exception as exc:
+        print(f"warning: goto failed for {url}: {exc}", file=sys.stderr)
+        page.remove_listener("response", on_response)
+        return None
+    page.wait_for_timeout(1_500)
+    page.remove_listener("response", on_response)
 
-
-def extract_listing_count(body_text: str) -> tuple[int | None, str]:
-    m = SHOWING_REGEX.search(body_text)
-    if m:
-        return _to_int(m.group(1)), m.group(0)
-    m = LISTINGS_COUNT_REGEX.search(body_text)
-    if m:
-        return _to_int(m.group(1)), m.group(0)
-    return None, ""
-
-
-def extract_price_range(body_text: str) -> tuple[float | None, float | None]:
-    m = PRICE_RANGE_REGEX.search(body_text)
+    html = captured.get("html")
+    if not html:
+        print(f"warning: no HTML captured for {url}", file=sys.stderr)
+        return None
+    m = INDEX_DATA_RE.search(html)
     if not m:
+        print(f"warning: no index-data blob in {url}", file=sys.stderr)
+        return None
+    try:
+        return json.loads(m.group(1))
+    except json.JSONDecodeError as exc:
+        print(f"warning: index-data JSON parse failed: {exc}", file=sys.stderr)
+        return None
+
+
+def price_range_from_histogram(data: dict) -> tuple[float | None, float | None]:
+    h = data.get("histogram") or {}
+    buckets = h.get("buckets") or []
+    if not buckets:
         return None, None
     try:
-        return _to_float(m.group(1)), _to_float(m.group(2))
-    except ValueError:
+        return float(buckets[0]["startPrice"]), float(buckets[-1]["endPrice"])
+    except (KeyError, TypeError, ValueError):
         return None, None
 
 
 def scrape() -> dict:
-    row = {
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "count": None,
-        "min_price": None,
-        "max_price": None,
-        "raw_text": "",
-    }
+    row: dict = {c: None for c in CSV_COLUMNS}
+    row["timestamp_utc"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         try:
             ctx = browser.new_context(user_agent=USER_AGENT, viewport=VIEWPORT)
             page = ctx.new_page()
-            page.goto(EVENT_URL, wait_until="domcontentloaded", timeout=60_000)
 
-            try:
-                page.wait_for_load_state("load", timeout=30_000)
-            except Exception as exc:
-                print(f"warning: load state timeout: {exc}", file=sys.stderr)
+            base = fetch_index_data(page, EVENT_URL)
+            if base:
+                row["total_listings"] = base.get("totalListings")
+                row["available_tickets"] = base.get("availableTickets")
+                min_p, max_p = price_range_from_histogram(base)
+                row["min_price"] = min_p
+                row["max_price"] = max_p
 
-            # Listings hydrate client-side; give them time and nudge with scrolls.
-            page.wait_for_timeout(8_000)
-            for y in (500, 1500, 2500):
-                try:
-                    page.evaluate(f"window.scrollTo(0, {y})")
-                    page.wait_for_timeout(1_200)
-                except Exception:
-                    break
-            page.wait_for_timeout(3_000)
-
-            try:
-                body_text = page.inner_text("body")
-            except Exception as exc:
-                print(f"warning: could not read body text: {exc}", file=sys.stderr)
-                body_text = ""
-
-            count, raw_text = extract_listing_count(body_text)
-            row["count"] = count
-            row["raw_text"] = raw_text
-
-            min_price, max_price = extract_price_range(body_text)
-            row["min_price"] = min_price
-            row["max_price"] = max_price
+            for tc_id, tc_name, col in TICKET_CLASSES:
+                # quantity=0 → include listings of any size (single + pairs + groups)
+                url = f"{EVENT_URL}?ticketClasses={tc_id}&quantity=0"
+                d = fetch_index_data(page, url)
+                if not d:
+                    continue
+                grid = d.get("grid") or {}
+                count = grid.get("totalFilteredListings")
+                if count is None:
+                    print(f"warning: no totalFilteredListings for {tc_name}", file=sys.stderr)
+                    continue
+                row[col] = count
         finally:
             browser.close()
+
+    # Derive "other" bucket (Suites, zone tickets, etc. not in the 5 named levels).
+    per_level_sum = sum(
+        row[col] for _, _, col in TICKET_CLASSES if isinstance(row[col], int)
+    )
+    if isinstance(row["total_listings"], int):
+        row["count_other"] = max(row["total_listings"] - per_level_sum, 0)
 
     return row
 
@@ -111,7 +139,7 @@ def scrape() -> dict:
 def append_row(row: dict) -> None:
     new_file = not DATA_CSV.exists()
     with DATA_CSV.open("a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
         if new_file:
             writer.writeheader()
         writer.writerow(row)
@@ -122,16 +150,14 @@ def main() -> int:
         row = scrape()
     except Exception as exc:
         print(f"warning: scrape failed: {exc}", file=sys.stderr)
-        row = {
-            "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "count": None,
-            "min_price": None,
-            "max_price": None,
-            "raw_text": f"error: {exc}",
-        }
+        row = {c: None for c in CSV_COLUMNS}
+        row["timestamp_utc"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     append_row(row)
+    per_level = " ".join(
+        f"{name.split()[0]}={row[col]}" for _, name, col in TICKET_CLASSES
+    )
     print(
-        f"logged: count={row['count']} "
+        f"logged: total={row['total_listings']} {per_level} other={row['count_other']} "
         f"min=${row['min_price']} max=${row['max_price']} "
         f"at {row['timestamp_utc']}"
     )

@@ -31,7 +31,20 @@ If the first run fails to push, enable **Settings → Actions → General → Wo
 
 ## How extraction works
 
-The listings page renders client-side, so `monitor.py` waits for `load`, lets the page settle, scrolls to trigger any lazy content, then reads `body` text. It pulls the count from `"Showing N of M"` (or `"N listings"` as a fallback) and the min/max from the price slider (`Price per ticket $X $Y`). If StubHub changes that UI, these regexes are the thing to retune — search for the new strings in the rendered body.
+StubHub server-renders an `<script id="index-data" type="application/json">` blob containing `totalListings`, `ticketClasses`, and `histogram` buckets. `monitor.py` parses that directly. For the per-level breakdown it loads the event URL 5 more times with `?ticketClasses=<id>&quantity=0` — each response's `grid.totalFilteredListings` gives the count for 100/200/300/400/Floor. `count_other` captures suites, zone tickets, and anything without an explicit level class.
+
+If StubHub changes the embedded-data schema, the thing to retune is `fetch_index_data()` + the field paths in `scrape()`.
+
+## Local dashboard
+
+For an interactive view: open `dashboard.html` via a local HTTP server (required so `fetch('data.csv')` works in the browser):
+
+```bash
+python -m http.server 8765
+# then open http://127.0.0.1:8765/dashboard.html
+```
+
+Auto-refreshes every 60 seconds.
 
 ## Note on StubHub ToS
 
