@@ -23,20 +23,22 @@ DATA_CSV = Path(__file__).parent / "data.csv"
 # Sphere ticket classes. Stable for this event's lifetime.
 # Source: /index-data -> ticketClasses[*].{ticketClassId, name}
 TICKET_CLASSES: list[tuple[int, str, str]] = [
-    (3788, "100 Level", "count_100"),
-    (3803, "200 Level", "count_200"),
-    (17690, "300 Level", "count_300"),
-    (8152, "400 Level", "count_400"),
-    (682, "Floor", "count_floor"),
+    (3788, "100 Level", "100"),
+    (3803, "200 Level", "200"),
+    (17690, "300 Level", "300"),
+    (8152, "400 Level", "400"),
+    (682, "Floor", "floor"),
 ]
 
 CSV_COLUMNS = [
     "timestamp_utc",
     "total_listings",
-    *(col for _, _, col in TICKET_CLASSES),
+    *(f"count_{k}" for _, _, k in TICKET_CLASSES),
     "count_other",
     "min_price",
     "max_price",
+    *(f"min_{k}" for _, _, k in TICKET_CLASSES),
+    *(f"max_{k}" for _, _, k in TICKET_CLASSES),
     "available_tickets",
 ]
 
@@ -111,7 +113,7 @@ def scrape() -> dict:
                 row["min_price"] = min_p
                 row["max_price"] = max_p
 
-            for tc_id, tc_name, col in TICKET_CLASSES:
+            for tc_id, tc_name, key in TICKET_CLASSES:
                 # quantity=0 → include listings of any size (single + pairs + groups)
                 url = f"{EVENT_URL}?ticketClasses={tc_id}&quantity=0"
                 d = fetch_index_data(page, url)
@@ -119,16 +121,23 @@ def scrape() -> dict:
                     continue
                 grid = d.get("grid") or {}
                 count = grid.get("totalFilteredListings")
-                if count is None:
+                if count is not None:
+                    row[f"count_{key}"] = count
+                else:
                     print(f"warning: no totalFilteredListings for {tc_name}", file=sys.stderr)
-                    continue
-                row[col] = count
+                # Per-class price range from visible items (sample of top 10 recommended)
+                items = grid.get("items") or []
+                prices = [i.get("rawPrice") for i in items if isinstance(i.get("rawPrice"), (int, float))]
+                if prices:
+                    row[f"min_{key}"] = round(min(prices), 2)
+                    row[f"max_{key}"] = round(max(prices), 2)
         finally:
             browser.close()
 
     # Derive "other" bucket (Suites, zone tickets, etc. not in the 5 named levels).
     per_level_sum = sum(
-        row[col] for _, _, col in TICKET_CLASSES if isinstance(row[col], int)
+        row[f"count_{key}"] for _, _, key in TICKET_CLASSES
+        if isinstance(row[f"count_{key}"], int)
     )
     if isinstance(row["total_listings"], int):
         row["count_other"] = max(row["total_listings"] - per_level_sum, 0)
@@ -154,11 +163,12 @@ def main() -> int:
         row["timestamp_utc"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     append_row(row)
     per_level = " ".join(
-        f"{name.split()[0]}={row[col]}" for _, name, col in TICKET_CLASSES
+        f"{name.split()[0]}={row[f'count_{key}']}(${row[f'min_{key}']}-${row[f'max_{key}']})"
+        for _, name, key in TICKET_CLASSES
     )
     print(
         f"logged: total={row['total_listings']} {per_level} other={row['count_other']} "
-        f"min=${row['min_price']} max=${row['max_price']} "
+        f"overall ${row['min_price']}-${row['max_price']} "
         f"at {row['timestamp_utc']}"
     )
     return 0

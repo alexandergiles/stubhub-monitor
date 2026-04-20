@@ -44,6 +44,7 @@
   .stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
   .stat .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
   .stat .delta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .stat .price-range { font-size: 11px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
   .delta.up { color: #15803d; }
   .delta.down { color: #b91c1c; }
   .stat.big .value { font-size: 28px; }
@@ -90,12 +91,12 @@
   </section>
 
   <section class="level-stats">
-    <div class="stat" style="border-left-color:#2563eb"><div class="label">100 Level</div><div class="value" id="s-100">—</div><div class="delta" id="s-100-delta"></div></div>
-    <div class="stat" style="border-left-color:#7c3aed"><div class="label">200 Level</div><div class="value" id="s-200">—</div><div class="delta" id="s-200-delta"></div></div>
-    <div class="stat" style="border-left-color:#db2777"><div class="label">300 Level</div><div class="value" id="s-300">—</div><div class="delta" id="s-300-delta"></div></div>
-    <div class="stat" style="border-left-color:#ea580c"><div class="label">400 Level</div><div class="value" id="s-400">—</div><div class="delta" id="s-400-delta"></div></div>
-    <div class="stat" style="border-left-color:#059669"><div class="label">Floor</div><div class="value" id="s-floor">—</div><div class="delta" id="s-floor-delta"></div></div>
-    <div class="stat" style="border-left-color:#64748b"><div class="label">Other (Suites, zones)</div><div class="value" id="s-other">—</div><div class="delta" id="s-other-delta"></div></div>
+    <div class="stat" style="border-left-color:#2563eb"><div class="label">100 Level</div><div class="value" id="s-100">—</div><div class="delta" id="s-100-delta"></div><div class="price-range" id="s-100-price">—</div></div>
+    <div class="stat" style="border-left-color:#7c3aed"><div class="label">200 Level</div><div class="value" id="s-200">—</div><div class="delta" id="s-200-delta"></div><div class="price-range" id="s-200-price">—</div></div>
+    <div class="stat" style="border-left-color:#db2777"><div class="label">300 Level</div><div class="value" id="s-300">—</div><div class="delta" id="s-300-delta"></div><div class="price-range" id="s-300-price">—</div></div>
+    <div class="stat" style="border-left-color:#ea580c"><div class="label">400 Level</div><div class="value" id="s-400">—</div><div class="delta" id="s-400-delta"></div><div class="price-range" id="s-400-price">—</div></div>
+    <div class="stat" style="border-left-color:#059669"><div class="label">Floor</div><div class="value" id="s-floor">—</div><div class="delta" id="s-floor-delta"></div><div class="price-range" id="s-floor-price">—</div></div>
+    <div class="stat" style="border-left-color:#64748b"><div class="label">Other (Suites, zones)</div><div class="value" id="s-other">—</div><div class="delta" id="s-other-delta"></div><div class="price-range">—</div></div>
   </section>
 
   <div class="chart-card">
@@ -107,14 +108,13 @@
     <thead><tr>
       <th>Timestamp (UTC)</th>
       <th class="num">Total</th>
-      <th class="num">100</th>
-      <th class="num">200</th>
-      <th class="num">300</th>
-      <th class="num">400</th>
-      <th class="num">Floor</th>
+      <th class="num">100</th><th class="num">100 $</th>
+      <th class="num">200</th><th class="num">200 $</th>
+      <th class="num">300</th><th class="num">300 $</th>
+      <th class="num">400</th><th class="num">400 $</th>
+      <th class="num">Floor</th><th class="num">Floor $</th>
       <th class="num">Other</th>
-      <th class="num">Min $</th>
-      <th class="num">Max $</th>
+      <th class="num">Overall $</th>
     </tr></thead>
     <tbody></tbody>
   </table>
@@ -194,22 +194,37 @@ async function refresh() {
     LEVEL_IDS.forEach(([col, id]) => {
       document.getElementById(id).textContent = fmt(latest[col]);
       if (prev) document.getElementById(id + "-delta").innerHTML = delta(latest[col], prev[col]);
+      // Per-level price range (skip for "other")
+      const priceEl = document.getElementById(id + "-price");
+      if (priceEl) {
+        const key = col.replace("count_", "");
+        const mn = latest[`min_${key}`];
+        const mx = latest[`max_${key}`];
+        if (mn && mx && !isNaN(+mn) && !isNaN(+mx)) {
+          priceEl.textContent = `$${fmt(mn)}–$${fmt(mx)}`;
+        } else {
+          priceEl.textContent = "—";
+        }
+      }
     });
 
     const tbody = document.querySelector("#table tbody");
     tbody.innerHTML = "";
+    const priceCell = (mn, mx) => {
+      if (!mn || !mx || isNaN(+mn) || isNaN(+mx)) return `<td class="num">—</td>`;
+      return `<td class="num">$${fmt(mn)}–$${fmt(mx)}</td>`;
+    };
     rows.slice(-20).reverse().forEach(r => {
       const tr = document.createElement("tr");
       tr.innerHTML = `<td>${r.timestamp_utc}</td>`
         + `<td class="num"><b>${fmt(r.total_listings)}</b></td>`
-        + `<td class="num">${fmt(r.count_100)}</td>`
-        + `<td class="num">${fmt(r.count_200)}</td>`
-        + `<td class="num">${fmt(r.count_300)}</td>`
-        + `<td class="num">${fmt(r.count_400)}</td>`
-        + `<td class="num">${fmt(r.count_floor)}</td>`
+        + `<td class="num">${fmt(r.count_100)}</td>` + priceCell(r.min_100, r.max_100)
+        + `<td class="num">${fmt(r.count_200)}</td>` + priceCell(r.min_200, r.max_200)
+        + `<td class="num">${fmt(r.count_300)}</td>` + priceCell(r.min_300, r.max_300)
+        + `<td class="num">${fmt(r.count_400)}</td>` + priceCell(r.min_400, r.max_400)
+        + `<td class="num">${fmt(r.count_floor)}</td>` + priceCell(r.min_floor, r.max_floor)
         + `<td class="num">${fmt(r.count_other)}</td>`
-        + `<td class="num">$${fmt(r.min_price)}</td>`
-        + `<td class="num">$${fmt(r.max_price)}</td>`;
+        + `<td class="num">$${fmt(r.min_price)}–$${fmt(r.max_price)}</td>`;
       tbody.appendChild(tr);
     });
 
