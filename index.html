@@ -2,127 +2,216 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>StubHub Monitor — Phish · Sphere · 2026-04-30</title>
+<title>TKTR-PHISH-SPH-0430 · Ticket Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --muted: #64748b;
-    --bg: #f8fafc;
-    --card: #ffffff;
-    --border: #e2e8f0;
+    --bg-base: #0a0e14;
+    --bg-deep: #050810;
+    --border: #1f2937;
+    --border-subtle: #111827;
+    --text-primary: #f1f5f9;
+    --text-body: #d1d5db;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+    --accent-wait: #fbbf24;
+    --accent-buy: #4ade80;
+    --accent-sell: #f87171;
   }
   * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    margin: 0;
-    padding: 32px 24px;
-    background: var(--bg);
-    color: #0f172a;
+    background: var(--bg-base);
+    color: var(--text-body);
+    font-family: "JetBrains Mono", "IBM Plex Mono", Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.5;
   }
-  .wrap { max-width: 1200px; margin: 0 auto; }
-  header { margin-bottom: 20px; }
-  h1 { margin: 0 0 4px 0; font-size: 22px; }
-  .sub { color: var(--muted); font-size: 14px; }
-  .stats {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin: 20px 0 12px 0;
+  .app { max-width: 1280px; margin: 0 auto; }
+
+  .rule-bottom { border-bottom: 1px solid var(--border); }
+  .eyebrow { color: var(--text-dim); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+  .eyebrow-tight { color: var(--text-dim); font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; }
+
+  .strip {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 16px; background: var(--bg-deep); font-size: 11px;
   }
-  .level-stats {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 10px;
-    margin: 0 0 24px 0;
+  .strip .live { color: var(--accent-buy); display: flex; align-items: center; gap: 6px; }
+  .strip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-buy); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .strip .right { display: flex; gap: 20px; color: var(--text-muted); }
+  .strip .ok { color: var(--accent-buy); }
+
+  .header { padding: 18px 16px; }
+  .header .title { font-size: 22px; color: var(--text-primary); font-weight: 700; letter-spacing: -0.5px; margin-top: 4px; }
+  .header .title .pipe { color: var(--text-dim); font-weight: 400; }
+
+  .verdict { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; }
+  .verdict > div { padding: 18px 20px; border-right: 1px solid var(--border); }
+  .verdict > div:last-child { border-right: none; }
+  .v-signal { background: rgba(251,191,36,0.04); }
+  .v-signal.buy { background: rgba(74,222,128,0.04); }
+  .v-signal.hold { background: rgba(148,163,184,0.04); }
+  .v-signal .word { font-size: 44px; font-weight: 700; letter-spacing: -1px; line-height: 1.05; }
+  .v-signal .conf { color: var(--text-muted); font-size: 12px; }
+  .v-signal .conf strong { color: var(--text-primary); font-weight: 500; }
+  .v-signal .foot { color: var(--text-muted); font-size: 11px; margin-top: 6px; }
+  .v-kpi .val { font-size: 28px; font-weight: 600; color: var(--text-primary); margin: 6px 0; font-variant-numeric: tabular-nums; }
+  .v-kpi .delta { font-size: 11px; color: var(--text-muted); }
+
+  .section { padding: 16px; }
+  .section-head {
+    display: flex; justify-content: space-between; align-items: center;
+    color: var(--text-dim); font-size: 10px; letter-spacing: 1px; margin-bottom: 10px; text-transform: uppercase;
   }
-  .stat {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 16px;
-    border-left: 4px solid #cbd5e1;
+  .section-head .legend { display: flex; gap: 16px; }
+  .section-head .legend span { color: var(--text-muted); }
+
+  .bowl-levels { display: grid; grid-template-columns: 300px 1fr; }
+  .bowl-levels > .bowl-col { padding: 16px; border-right: 1px solid var(--border); }
+  .bowl-inset { background: var(--bg-deep); padding: 10px; border: 1px solid var(--border); }
+
+  .lvls-head, .lvls-row {
+    display: grid; grid-template-columns: 60px 70px 110px 90px 70px 1fr;
+    padding: 10px 14px; border-bottom: 1px solid var(--border); align-items: center;
   }
-  .stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
-  .stat .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
-  .stat .delta { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .stat .price-range { font-size: 11px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
-  .delta.up { color: #15803d; }
-  .delta.down { color: #b91c1c; }
-  .stat.big .value { font-size: 28px; }
-  .chart-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 16px;
-    margin-bottom: 24px;
+  .lvls-head { background: var(--bg-deep); color: var(--text-dim); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+  .lvls-row { cursor: pointer; transition: background 0.12s; }
+  .lvls-row.active { background: rgba(251,191,36,0.06); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .lvls-row .lv { color: var(--accent-wait); font-weight: 600; }
+  .lvls-row .cnt { color: var(--text-primary); }
+  .lvls-row .range { color: var(--text-muted); }
+  .lvls-row .med { color: var(--text-primary); font-weight: 600; }
+  .lvls-row .trend { padding-left: 14px; }
+  .pos { color: var(--accent-sell); }
+  .neg { color: var(--accent-buy); }
+  .flat { color: var(--text-muted); }
+
+  .tick-wrap { border-top: 1px solid var(--border); }
+  .tick-head, .tick-row {
+    display: grid; grid-template-columns: 180px 70px 80px 90px 80px 1fr;
+    padding: 8px 16px;
   }
-  .chart-card img { width: 100%; display: block; border-radius: 6px; }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
-    font-size: 13px;
-  }
-  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-  th { background: #f1f5f9; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
-  tr:last-child td { border-bottom: none; }
-  td.num { text-align: right; font-variant-numeric: tabular-nums; }
-  footer { margin-top: 20px; font-size: 12px; color: var(--muted); text-align: center; }
-  .pill {
-    display: inline-block; padding: 2px 8px; border-radius: 999px;
-    background: #dbeafe; color: #1e40af; font-size: 11px; font-weight: 600;
-  }
+  .tick-head { background: var(--bg-deep); color: var(--text-dim); font-size: 10px; letter-spacing: 1px; border-bottom: 1px solid var(--border); text-transform: uppercase; }
+  .tick-row { border-bottom: 1px solid var(--border-subtle); font-size: 11px; }
+  .tick-row .ts { color: var(--text-muted); }
+
+  footer { padding: 16px; color: var(--text-dim); font-size: 10px; letter-spacing: 1px; border-top: 1px solid var(--border); text-align: center; text-transform: uppercase; }
+  footer a { color: var(--text-muted); text-decoration: none; }
+  footer a:hover { color: var(--text-primary); }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>Phish · Sphere, Las Vegas · 2026-04-30 <span class="pill" id="refresh-pill">live</span></h1>
-    <div class="sub">StubHub listing count by level + price range over time. Page auto-refreshes every 60s.</div>
-  </header>
+<div class="app" id="app">
 
-  <section class="stats">
-    <div class="stat big" style="border-left-color:#0f172a"><div class="label">Total listings</div><div class="value" id="s-total">—</div><div class="delta" id="s-total-delta"></div></div>
-    <div class="stat" style="border-left-color:#f97316"><div class="label">Min price</div><div class="value" id="s-min">—</div><div class="delta" id="s-min-delta"></div></div>
-    <div class="stat" style="border-left-color:#c2410c"><div class="label">Max price</div><div class="value" id="s-max">—</div><div class="delta" id="s-max-delta"></div></div>
-    <div class="stat"><div class="label">Last update</div><div class="value" id="s-when" style="font-size:15px">—</div><div class="delta" id="s-rows"></div></div>
-  </section>
-
-  <section class="level-stats">
-    <div class="stat" style="border-left-color:#2563eb"><div class="label">100 Level</div><div class="value" id="s-100">—</div><div class="delta" id="s-100-delta"></div><div class="price-range" id="s-100-price">—</div></div>
-    <div class="stat" style="border-left-color:#7c3aed"><div class="label">200 Level</div><div class="value" id="s-200">—</div><div class="delta" id="s-200-delta"></div><div class="price-range" id="s-200-price">—</div></div>
-    <div class="stat" style="border-left-color:#db2777"><div class="label">300 Level</div><div class="value" id="s-300">—</div><div class="delta" id="s-300-delta"></div><div class="price-range" id="s-300-price">—</div></div>
-    <div class="stat" style="border-left-color:#ea580c"><div class="label">400 Level</div><div class="value" id="s-400">—</div><div class="delta" id="s-400-delta"></div><div class="price-range" id="s-400-price">—</div></div>
-    <div class="stat" style="border-left-color:#059669"><div class="label">Floor</div><div class="value" id="s-floor">—</div><div class="delta" id="s-floor-delta"></div><div class="price-range" id="s-floor-price">—</div></div>
-    <div class="stat" style="border-left-color:#64748b"><div class="label">Other (Suites, zones)</div><div class="value" id="s-other">—</div><div class="delta" id="s-other-delta"></div><div class="price-range">—</div></div>
-  </section>
-
-  <div class="chart-card">
-    <img id="chart" src="chart.png" alt="Listings and price range over time">
+  <div class="strip rule-bottom">
+    <div class="live"><span class="dot"></span> LIVE</div>
+    <div class="right">
+      <span id="ts">—</span>
+      <span>REFRESH 60s</span>
+      <span id="conn" class="ok">CONN OK</span>
+    </div>
   </div>
 
-  <h2 style="font-size:15px; margin: 0 0 8px 0;">Recent readings</h2>
-  <table id="table">
-    <thead><tr>
-      <th>Timestamp (UTC)</th>
-      <th class="num">Total</th>
-      <th class="num">100</th><th class="num">100 $</th>
-      <th class="num">200</th><th class="num">200 $</th>
-      <th class="num">300</th><th class="num">300 $</th>
-      <th class="num">400</th><th class="num">400 $</th>
-      <th class="num">Floor</th><th class="num">Floor $</th>
-      <th class="num">Other</th>
-      <th class="num">Overall $</th>
-    </tr></thead>
-    <tbody></tbody>
-  </table>
+  <div class="header rule-bottom">
+    <div class="eyebrow">EVENT · TKTR-PHISH-SPH-0430</div>
+    <div class="title">PHISH <span class="pipe">│</span> SPHERE / LAS VEGAS <span class="pipe">│</span> THU 2026-04-30</div>
+  </div>
 
-  <footer>Data refreshes every hour via GitHub Actions. Source: alexandergiles/stubhub-monitor</footer>
+  <div class="verdict rule-bottom">
+    <div class="v-signal" id="vsig">
+      <div class="eyebrow-tight">SIGNAL · BUY/WAIT/HOLD</div>
+      <div style="display:flex;align-items:baseline;gap:14px;margin-top:6px;">
+        <div class="word" id="vword" style="color:var(--accent-wait)">—</div>
+        <div class="conf">conf <strong id="vconf">—</strong></div>
+      </div>
+      <div class="foot">forecast: <span id="vfc">—</span> over 48h</div>
+    </div>
+    <div class="v-kpi">
+      <div class="eyebrow-tight">TOTAL</div>
+      <div class="val" id="kTotal">—</div>
+      <div class="delta" id="kTotalD">—</div>
+    </div>
+    <div class="v-kpi">
+      <div class="eyebrow-tight">MEDIAN</div>
+      <div class="val" id="kMed">—</div>
+      <div class="delta" id="kMedD">—</div>
+    </div>
+    <div class="v-kpi">
+      <div class="eyebrow-tight">LOW</div>
+      <div class="val" id="kMin">—</div>
+      <div class="delta" id="kMinD">—</div>
+    </div>
+  </div>
+
+  <div class="section rule-bottom">
+    <div class="section-head">
+      <div>MEDIAN PRICE · LAST 72H · +48H FORECAST</div>
+      <div class="legend">
+        <span><span style="color:var(--accent-buy)">━</span> actual</span>
+        <span><span style="color:var(--accent-wait)">┉</span> forecast</span>
+      </div>
+    </div>
+    <svg id="mainChart" viewBox="0 0 720 200" width="100%" style="display:block;"></svg>
+  </div>
+
+  <div class="bowl-levels rule-bottom">
+    <div class="bowl-col">
+      <div class="section-head" style="margin-bottom:10px;"><div>BOWL MAP · HOVER TO FILTER</div></div>
+      <div class="bowl-inset">
+        <svg id="bowl" viewBox="0 0 320 200" width="100%" style="display:block;"></svg>
+      </div>
+    </div>
+    <div>
+      <div class="lvls-head">
+        <div>LVL</div>
+        <div class="num">CNT</div>
+        <div class="num">RANGE</div>
+        <div class="num">MED</div>
+        <div class="num">Δ24H</div>
+        <div style="padding-left:14px;">TREND 12H</div>
+      </div>
+      <div id="lvlsBody"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="section" style="padding-bottom:10px;">
+      <div class="section-head" style="margin-bottom:0;"><div>TICK LOG · LAST 8 READINGS</div></div>
+    </div>
+    <div class="tick-wrap">
+      <div class="tick-head">
+        <div>TIMESTAMP</div>
+        <div class="num">CNT</div>
+        <div class="num">MIN</div>
+        <div class="num">MAX</div>
+        <div class="num">MED</div>
+        <div class="num">Δ%</div>
+      </div>
+      <div id="tickBody"></div>
+    </div>
+  </div>
+
+  <footer>
+    Source · <a href="https://github.com/alexandergiles/stubhub-monitor">alexandergiles/stubhub-monitor</a>
+    · hourly GitHub Actions cron
+  </footer>
 </div>
 
 <script>
+const LEVELS = [
+  { id: "100",   key: "100",   color: "#2563eb" },
+  { id: "200",   key: "200",   color: "#7c3aed" },
+  { id: "300",   key: "300",   color: "#db2777" },
+  { id: "400",   key: "400",   color: "#ea580c" },
+  { id: "FLR",   key: "floor", color: "#059669" },
+  { id: "OTH",   key: "other", color: "#64748b" },
+];
+
 function parseCsv(text) {
   const [headerLine, ...rest] = text.trim().split(/\r?\n/);
   const headers = headerLine.split(",");
@@ -133,7 +222,7 @@ function parseCsv(text) {
       const c = line[i];
       if (inQ) {
         if (c === '"' && line[i+1] === '"') { buf += '"'; i++; }
-        else if (c === '"') { inQ = false; }
+        else if (c === '"') inQ = false;
         else buf += c;
       } else {
         if (c === '"') inQ = true;
@@ -148,88 +237,365 @@ function parseCsv(text) {
   });
 }
 
-function fmt(n) {
-  if (n === "" || n === null || n === undefined || isNaN(+n)) return "—";
-  return Number(+n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+const num = v => { if (v === "" || v == null) return null; const n = +v; return isNaN(n) ? null : n; };
+
+function fmt(n, d=0) {
+  if (n == null || isNaN(+n)) return "—";
+  return Number(+n).toLocaleString(undefined, { maximumFractionDigits: d });
 }
 
-function delta(cur, prev, prefix="") {
-  if (prev === undefined || isNaN(+cur) || isNaN(+prev) || prev === "" || cur === "") return "";
-  const d = +cur - +prev;
-  if (d === 0) return "unchanged";
-  const arrow = d > 0 ? "▲" : "▼";
-  const cls = d > 0 ? "up" : "down";
-  return `<span class="${cls}">${arrow} ${prefix}${Math.abs(d).toFixed(0)}</span>`;
+function fmtDollar(n, d=0) {
+  if (n == null || isNaN(+n)) return "—";
+  return "$" + fmt(n, d);
 }
 
-const LEVEL_IDS = [
-  ["count_100", "s-100"],
-  ["count_200", "s-200"],
-  ["count_300", "s-300"],
-  ["count_400", "s-400"],
-  ["count_floor", "s-floor"],
-  ["count_other", "s-other"],
-];
+function pct(d, decimals=1) {
+  if (d == null || isNaN(+d)) return "—";
+  const v = +d;
+  const sign = v > 0 ? "+" : "";
+  return `${sign}${v.toFixed(decimals)}%`;
+}
+
+function classForDelta(d) {
+  if (d == null || isNaN(+d)) return "flat";
+  if (+d < 0) return "neg";
+  if (+d > 0) return "pos";
+  return "flat";
+}
+
+function linearRegress(xs, ys) {
+  const n = xs.length;
+  if (n < 2) return null;
+  const mx = xs.reduce((a,b) => a+b, 0) / n;
+  const my = ys.reduce((a,b) => a+b, 0) / n;
+  let nu = 0, den = 0, tss = 0;
+  for (let i = 0; i < n; i++) {
+    nu += (xs[i] - mx) * (ys[i] - my);
+    den += (xs[i] - mx) ** 2;
+    tss += (ys[i] - my) ** 2;
+  }
+  const slope = den === 0 ? 0 : nu / den;
+  const intercept = my - slope * mx;
+  let rss = 0;
+  for (let i = 0; i < n; i++) {
+    const p = slope * xs[i] + intercept;
+    rss += (ys[i] - p) ** 2;
+  }
+  const r2 = tss === 0 ? 0 : Math.max(0, 1 - rss / tss);
+  return { slope, intercept, r2, residualStd: Math.sqrt(rss / Math.max(1, n - 2)) };
+}
+
+function computeForecast(rows) {
+  const withMed = rows.filter(r => num(r.median_price) != null);
+  if (withMed.length < 3) return null;
+  const cutoff = new Date(withMed[withMed.length - 1].timestamp_utc).getTime() - 72 * 3600000;
+  const recent = withMed.filter(r => new Date(r.timestamp_utc).getTime() >= cutoff);
+  if (recent.length < 3) return null;
+  const t0 = new Date(recent[0].timestamp_utc).getTime();
+  const xs = recent.map(r => (new Date(r.timestamp_utc).getTime() - t0) / 3600000);
+  const ys = recent.map(r => +r.median_price);
+  const fit = linearRegress(xs, ys);
+  if (!fit) return null;
+  const tLast = xs[xs.length - 1];
+  const forecastPts = [];
+  for (let h = 1; h <= 48; h++) {
+    const x = tLast + h;
+    const y = fit.slope * x + fit.intercept;
+    const widen = Math.max(5, fit.residualStd * (1 + h / 24));
+    forecastPts.push({ tsMs: t0 + x * 3600000, median: y, low: y - widen, high: y + widen });
+  }
+  const currentMed = ys[ys.length - 1];
+  const projected48h = fit.slope * (tLast + 48) + fit.intercept;
+  const fc48Pct = currentMed === 0 ? 0 : ((projected48h - currentMed) / currentMed) * 100;
+  return { forecastPts, fc48Pct, r2: fit.r2, slope: fit.slope, currentMed };
+}
+
+function computeVerdict(fc) {
+  if (!fc) return { signal: "HOLD", conf: 0, fc48: 0 };
+  const { fc48Pct, r2 } = fc;
+  const conf = Math.round(Math.min(95, Math.max(35, r2 * 100)));
+  let signal = "HOLD";
+  if (fc48Pct <= -2.0) signal = "WAIT";
+  else if (fc48Pct >= 2.0) signal = "BUY";
+  return { signal, conf, fc48: fc48Pct };
+}
+
+function atOrBefore(rows, fromRow, hoursBack) {
+  const target = new Date(fromRow.timestamp_utc).getTime() - hoursBack * 3600000;
+  let best = null;
+  for (const r of rows) {
+    const t = new Date(r.timestamp_utc).getTime();
+    if (t <= target && (!best || t > new Date(best.timestamp_utc).getTime())) best = r;
+  }
+  return best;
+}
+
+function deltaPct(cur, prev) {
+  if (cur == null || prev == null || prev === 0 || isNaN(+cur) || isNaN(+prev)) return null;
+  return ((cur - prev) / prev) * 100;
+}
+
+function renderMainChart(rows, fc) {
+  const svg = document.getElementById("mainChart");
+  svg.innerHTML = "";
+  const w = 720, h = 200, padL = 44, padR = 20, padT = 20, padB = 20;
+  const withMed = rows.filter(r => num(r.median_price) != null);
+  if (withMed.length < 2) return;
+  const latestMs = new Date(withMed[withMed.length - 1].timestamp_utc).getTime();
+  const startMs = latestMs - 72 * 3600000;
+  const endMs = fc ? fc.forecastPts[fc.forecastPts.length - 1].tsMs : latestMs;
+
+  const actualPts = withMed
+    .filter(r => new Date(r.timestamp_utc).getTime() >= startMs)
+    .map(r => ({
+      tsMs: new Date(r.timestamp_utc).getTime(),
+      med: +r.median_price,
+      low: num(r.min_price),
+      high: num(r.max_price),
+    }));
+  if (!actualPts.length) return;
+
+  const fcPts = fc ? fc.forecastPts : [];
+  const allY = [
+    ...actualPts.flatMap(p => [p.med, p.low, p.high]).filter(v => v != null),
+    ...fcPts.flatMap(p => [p.median, p.low, p.high]),
+  ];
+  const yMin = Math.min(...allY) * 0.95;
+  const yMax = Math.max(...allY) * 1.05;
+  const X = ts => padL + ((ts - startMs) / (endMs - startMs)) * (w - padL - padR);
+  const Y = v => padT + (1 - (v - yMin) / (yMax - yMin)) * (h - padT - padB);
+
+  for (let i = 0; i < 5; i++) {
+    const y = padT + i * (h - padT - padB) / 4;
+    svg.insertAdjacentHTML("beforeend",
+      `<line x1="${padL}" x2="${w - padR}" y1="${y}" y2="${y}" stroke="#1f2937" stroke-dasharray="2 4"/>`);
+  }
+
+  if (actualPts.every(p => p.low != null && p.high != null)) {
+    const hi = actualPts.map(p => `${X(p.tsMs)},${Y(p.high)}`).join(" L");
+    const lo = actualPts.slice().reverse().map(p => `${X(p.tsMs)},${Y(p.low)}`).join(" L");
+    svg.insertAdjacentHTML("beforeend",
+      `<path d="M${hi} L${lo} Z" fill="rgba(74,222,128,0.08)" />`);
+  }
+
+  if (fcPts.length) {
+    const anchor = actualPts[actualPts.length - 1];
+    const hi = fcPts.map(p => `${X(p.tsMs)},${Y(p.high)}`).join(" L");
+    const lo = fcPts.slice().reverse().map(p => `${X(p.tsMs)},${Y(p.low)}`).join(" L");
+    svg.insertAdjacentHTML("beforeend",
+      `<path d="M${X(anchor.tsMs)},${Y(anchor.med)} L${hi} L${lo} Z" fill="rgba(251,191,36,0.08)" />`);
+  }
+
+  const medPath = actualPts.map((p, i) =>
+    `${i === 0 ? "M" : "L"}${X(p.tsMs)},${Y(p.med)}`).join(" ");
+  svg.insertAdjacentHTML("beforeend",
+    `<path d="${medPath}" fill="none" stroke="#4ade80" stroke-width="1.5"/>`);
+
+  if (fcPts.length) {
+    const anchor = actualPts[actualPts.length - 1];
+    const fcPath = `M${X(anchor.tsMs)},${Y(anchor.med)} ` +
+      fcPts.map(p => `L${X(p.tsMs)},${Y(p.median)}`).join(" ");
+    svg.insertAdjacentHTML("beforeend",
+      `<path d="${fcPath}" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="3 2"/>`);
+  }
+
+  svg.insertAdjacentHTML("beforeend",
+    `<line x1="${X(latestMs)}" x2="${X(latestMs)}" y1="${padT}" y2="${h - padB}" stroke="#64748b" stroke-dasharray="1 3"/>`);
+  svg.insertAdjacentHTML("beforeend",
+    `<text x="${X(latestMs) + 4}" y="${padT + 8}" font-size="9" fill="#94a3b8" font-family="JetBrains Mono, monospace">NOW</text>`);
+  if (fcPts.length) {
+    svg.insertAdjacentHTML("beforeend",
+      `<text x="${w - padR - 2}" y="${padT + 8}" font-size="9" fill="#fbbf24" font-family="JetBrains Mono, monospace" text-anchor="end">+48H FORECAST</text>`);
+  }
+
+  for (const v of [yMax, (yMin + yMax) / 2, yMin]) {
+    svg.insertAdjacentHTML("beforeend",
+      `<text x="${padL - 6}" y="${Y(v) + 3}" font-size="9" font-family="JetBrains Mono, monospace" fill="#64748b" text-anchor="end">$${Math.round(v)}</text>`);
+  }
+}
+
+let hlState = null;
+function renderBowl() {
+  const svg = document.getElementById("bowl");
+  const bowls = [{id:"100",r:60},{id:"200",r:85},{id:"300",r:110},{id:"400",r:135}];
+  const parts = [];
+  parts.push(`<rect x="140" y="172" width="40" height="6" fill="#4ade80"/>`);
+  parts.push(`<text x="160" y="192" font-size="9" font-family="JetBrains Mono, monospace" fill="#4ade80" text-anchor="middle" letter-spacing="1">STAGE</text>`);
+  for (const b of bowls) {
+    const hl = hlState === b.id;
+    parts.push(
+      `<path d="M ${160 - b.r} 170 A ${b.r} ${b.r * 0.7} 0 0 1 ${160 + b.r} 170" ` +
+      `fill="none" stroke="${hl ? "#fbbf24" : "#334155"}" stroke-width="${hl ? 3 : 1.5}" ` +
+      `data-id="${b.id}" style="cursor:pointer;"/>`
+    );
+    parts.push(
+      `<text x="160" y="${170 - b.r * 0.7 + 4}" font-size="9" font-family="JetBrains Mono, monospace" ` +
+      `fill="${hl ? "#fbbf24" : "#94a3b8"}" text-anchor="middle" font-weight="700">${b.id}</text>`
+    );
+  }
+  const flrHl = hlState === "FLR";
+  parts.push(
+    `<ellipse cx="160" cy="168" rx="35" ry="6" fill="none" ` +
+    `stroke="${flrHl ? "#fbbf24" : "#334155"}" stroke-width="${flrHl ? 2.5 : 1}" stroke-dasharray="3 2" ` +
+    `data-id="FLR" style="cursor:pointer;"/>`
+  );
+  parts.push(
+    `<text x="160" y="172" font-size="8" font-family="JetBrains Mono, monospace" ` +
+    `fill="${flrHl ? "#fbbf24" : "#94a3b8"}" text-anchor="middle">FLR</text>`
+  );
+  svg.innerHTML = parts.join("");
+  svg.querySelectorAll("[data-id]").forEach(el => {
+    el.addEventListener("mouseenter", () => setHl(el.getAttribute("data-id")));
+    el.addEventListener("mouseleave", () => setHl(null));
+  });
+}
+
+function setHl(id) {
+  hlState = id;
+  renderBowl();
+  document.querySelectorAll(".lvls-row").forEach(row => {
+    row.classList.toggle("active", row.getAttribute("data-id") === id);
+  });
+}
+
+function renderCandles(values) {
+  if (!values.length) return `<svg width="140" height="32"></svg>`;
+  const w = 140, h = 32;
+  const min = Math.min(...values), max = Math.max(...values);
+  const bw = w / values.length;
+  const rects = values.map((v, i) => {
+    const next = values[i+1] ?? v;
+    const up = next >= v;
+    const y1 = h - ((v - min) / ((max - min) || 1)) * h;
+    const y2 = h - ((next - min) / ((max - min) || 1)) * h;
+    const top = Math.min(y1, y2), bot = Math.max(y1, y2);
+    return `<rect x="${i*bw+1}" y="${top}" width="${bw-2}" height="${Math.max(1, bot - top)}" ` +
+           `fill="${up ? "#4ade80" : "#f87171"}" opacity="0.9"/>`;
+  }).join("");
+  return `<svg width="${w}" height="${h}" style="display:block;">${rects}</svg>`;
+}
+
+function renderLevels(rows, latest) {
+  const body = document.getElementById("lvlsBody");
+  body.innerHTML = "";
+  const prev24 = atOrBefore(rows, latest, 24);
+  const last12 = rows.slice(-12);
+
+  for (const L of LEVELS) {
+    const countCol = `count_${L.key}`;
+    const minCol = `min_${L.key}`;
+    const maxCol = `max_${L.key}`;
+    const medCol = `median_${L.key}`;
+    const cnt = num(latest[countCol]);
+    const lo = num(latest[minCol]);
+    const hi = num(latest[maxCol]);
+    const med = num(latest[medCol]);
+    const d = prev24 && med != null && num(prev24[medCol]) != null
+      ? deltaPct(med, num(prev24[medCol])) : null;
+    const bars = last12
+      .map(r => num(r[medCol]) ?? num(r[minCol]))
+      .filter(v => v != null);
+
+    const row = document.createElement("div");
+    row.className = "lvls-row";
+    row.setAttribute("data-id", L.id);
+    row.innerHTML = `
+      <div class="lv">${L.id}</div>
+      <div class="cnt num">${cnt == null ? "—" : fmt(cnt)}</div>
+      <div class="range num">${lo != null && hi != null ? `$${fmt(lo)}–$${fmt(hi)}` : "—"}</div>
+      <div class="med num">${med != null ? `$${fmt(med)}` : "—"}</div>
+      <div class="num ${classForDelta(d)}">${d != null ? pct(d) : "—"}</div>
+      <div class="trend">${renderCandles(bars)}</div>
+    `;
+    row.addEventListener("mouseenter", () => setHl(L.id));
+    row.addEventListener("mouseleave", () => setHl(null));
+    body.appendChild(row);
+  }
+}
+
+function renderTickLog(rows) {
+  const body = document.getElementById("tickBody");
+  body.innerHTML = "";
+  const recent = rows.slice(-8).reverse();
+  recent.forEach((r, idx, arr) => {
+    const next = arr[idx + 1];
+    const med = num(r.median_price);
+    const prevMed = next ? num(next.median_price) : null;
+    const dP = deltaPct(med, prevMed);
+    const row = document.createElement("div");
+    row.className = "tick-row";
+    row.innerHTML = `
+      <div class="ts">${r.timestamp_utc.replace("+00:00"," UTC")}</div>
+      <div class="num">${fmt(num(r.total_listings))}</div>
+      <div class="num">${num(r.min_price) != null ? fmtDollar(r.min_price) : "—"}</div>
+      <div class="num">${num(r.max_price) != null ? fmtDollar(r.max_price) : "—"}</div>
+      <div class="num">${med != null ? fmtDollar(med) : "—"}</div>
+      <div class="num ${classForDelta(dP)}">${dP != null ? pct(dP) : "—"}</div>
+    `;
+    body.appendChild(row);
+  });
+}
 
 async function refresh() {
   try {
     const resp = await fetch("data.csv?_=" + Date.now());
-    const rows = parseCsv(await resp.text()).filter(r => r.total_listings && !isNaN(+r.total_listings));
+    const rows = parseCsv(await resp.text())
+      .filter(r => num(r.total_listings) != null)
+      .sort((a, b) => a.timestamp_utc.localeCompare(b.timestamp_utc));
     if (!rows.length) return;
     const latest = rows[rows.length - 1];
-    const prev = rows.length > 1 ? rows[rows.length - 2] : undefined;
+    const prev24 = atOrBefore(rows, latest, 24);
 
-    document.getElementById("s-total").textContent = fmt(latest.total_listings);
-    document.getElementById("s-min").textContent = "$" + fmt(latest.min_price);
-    document.getElementById("s-max").textContent = "$" + fmt(latest.max_price);
-    document.getElementById("s-when").textContent = latest.timestamp_utc.replace("T", " ").replace(/\+00:00$/, " UTC");
-    document.getElementById("s-rows").textContent = `${rows.length} reading${rows.length===1?"":"s"}`;
+    document.getElementById("ts").textContent = latest.timestamp_utc.replace("+00:00"," UTC");
 
-    if (prev) {
-      document.getElementById("s-total-delta").innerHTML = delta(latest.total_listings, prev.total_listings);
-      document.getElementById("s-min-delta").innerHTML = delta(latest.min_price, prev.min_price, "$");
-      document.getElementById("s-max-delta").innerHTML = delta(latest.max_price, prev.max_price, "$");
-    }
+    const fc = computeForecast(rows);
+    const v = computeVerdict(fc);
+    const word = document.getElementById("vword");
+    word.textContent = v.signal;
+    const vsig = document.getElementById("vsig");
+    vsig.classList.remove("buy","hold");
+    if (v.signal === "BUY") { vsig.classList.add("buy"); word.style.color = "var(--accent-buy)"; }
+    else if (v.signal === "HOLD") { vsig.classList.add("hold"); word.style.color = "var(--text-muted)"; }
+    else { word.style.color = "var(--accent-wait)"; }
+    document.getElementById("vconf").textContent = v.conf + "%";
+    const fcEl = document.getElementById("vfc");
+    fcEl.textContent = v.fc48 != null ? pct(v.fc48) : "—";
+    fcEl.className = classForDelta(v.fc48);
 
-    LEVEL_IDS.forEach(([col, id]) => {
-      document.getElementById(id).textContent = fmt(latest[col]);
-      if (prev) document.getElementById(id + "-delta").innerHTML = delta(latest[col], prev[col]);
-      // Per-level price range (skip for "other")
-      const priceEl = document.getElementById(id + "-price");
-      if (priceEl) {
-        const key = col.replace("count_", "");
-        const mn = latest[`min_${key}`];
-        const mx = latest[`max_${key}`];
-        if (mn && mx && !isNaN(+mn) && !isNaN(+mx)) {
-          priceEl.textContent = `$${fmt(mn)}–$${fmt(mx)}`;
-        } else {
-          priceEl.textContent = "—";
-        }
-      }
-    });
+    const totalCur = num(latest.total_listings);
+    const totalPrev = prev24 ? num(prev24.total_listings) : null;
+    document.getElementById("kTotal").textContent = fmt(totalCur);
+    const totalDelta = totalPrev != null ? totalCur - totalPrev : null;
+    document.getElementById("kTotalD").innerHTML = totalDelta != null
+      ? `<span class="${classForDelta(-totalDelta)}">${totalDelta >= 0 ? "+" : ""}${fmt(totalDelta)} 24h</span>`
+      : "—";
 
-    const tbody = document.querySelector("#table tbody");
-    tbody.innerHTML = "";
-    const priceCell = (mn, mx) => {
-      if (!mn || !mx || isNaN(+mn) || isNaN(+mx)) return `<td class="num">—</td>`;
-      return `<td class="num">$${fmt(mn)}–$${fmt(mx)}</td>`;
-    };
-    rows.slice(-20).reverse().forEach(r => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${r.timestamp_utc}</td>`
-        + `<td class="num"><b>${fmt(r.total_listings)}</b></td>`
-        + `<td class="num">${fmt(r.count_100)}</td>` + priceCell(r.min_100, r.max_100)
-        + `<td class="num">${fmt(r.count_200)}</td>` + priceCell(r.min_200, r.max_200)
-        + `<td class="num">${fmt(r.count_300)}</td>` + priceCell(r.min_300, r.max_300)
-        + `<td class="num">${fmt(r.count_400)}</td>` + priceCell(r.min_400, r.max_400)
-        + `<td class="num">${fmt(r.count_floor)}</td>` + priceCell(r.min_floor, r.max_floor)
-        + `<td class="num">${fmt(r.count_other)}</td>`
-        + `<td class="num">$${fmt(r.min_price)}–$${fmt(r.max_price)}</td>`;
-      tbody.appendChild(tr);
-    });
+    const medCur = num(latest.median_price);
+    const medPrev = prev24 ? num(prev24.median_price) : null;
+    document.getElementById("kMed").textContent = medCur != null ? fmtDollar(medCur) : "—";
+    const medDP = deltaPct(medCur, medPrev);
+    document.getElementById("kMedD").innerHTML = medDP != null
+      ? `<span class="${classForDelta(medDP)}">${pct(medDP)} 24h</span>` : "—";
 
-    document.getElementById("chart").src = "chart.png?_=" + Date.now();
-  } catch (e) { console.error(e); }
+    const minCur = num(latest.min_price);
+    document.getElementById("kMin").textContent = minCur != null ? fmtDollar(minCur) : "—";
+    const minPrev = prev24 ? num(prev24.min_price) : null;
+    const minDP = deltaPct(minCur, minPrev);
+    document.getElementById("kMinD").innerHTML = minDP != null
+      ? `<span class="${classForDelta(minDP)}">${pct(minDP)} 24h</span>` : "—";
+
+    renderMainChart(rows, fc);
+    renderBowl();
+    renderLevels(rows, latest);
+    renderTickLog(rows);
+
+    document.getElementById("conn").textContent = "CONN OK";
+    document.getElementById("conn").className = "ok";
+  } catch (e) {
+    console.error(e);
+    document.getElementById("conn").textContent = "CONN ERR";
+    document.getElementById("conn").className = "";
+  }
 }
 
 refresh();

@@ -39,8 +39,10 @@ CSV_COLUMNS = [
     "count_other",
     "min_price",
     "max_price",
+    "median_price",
     *(f"min_{k}" for _, _, k in TICKET_CLASSES),
     *(f"max_{k}" for _, _, k in TICKET_CLASSES),
+    *(f"median_{k}" for _, _, k in TICKET_CLASSES),
     "available_tickets",
 ]
 
@@ -48,6 +50,15 @@ INDEX_DATA_RE = re.compile(
     r'<script id="index-data" type="application/json">(.+?)</script>',
     re.DOTALL,
 )
+
+
+def _median(xs: list[float]) -> float:
+    s = sorted(xs)
+    n = len(s)
+    if n == 0:
+        return 0.0
+    mid = n // 2
+    return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2
 
 
 def parse_index_data(html: str) -> dict | None:
@@ -225,6 +236,7 @@ def scrape() -> dict:
                 row["min_price"] = mn
                 row["max_price"] = mx
 
+            all_prices: list[float] = []
             for tc_id, tc_name, key in TICKET_CLASSES:
                 url = f"{EVENT_URL}?ticketClasses={tc_id}&quantity=0"
                 total, prices = collect_all_prices(page, url)
@@ -233,12 +245,16 @@ def scrape() -> dict:
                 if prices:
                     row[f"min_{key}"] = round(min(prices), 2)
                     row[f"max_{key}"] = round(max(prices), 2)
+                    row[f"median_{key}"] = round(_median(prices), 2)
+                    all_prices.extend(prices)
                     print(
                         f"  {tc_name}: {total} listings, "
                         f"captured {len(prices)} prices, "
-                        f"${min(prices):.2f} - ${max(prices):.2f}",
+                        f"${min(prices):.2f} - ${max(prices):.2f} (med ${_median(prices):.2f})",
                         file=sys.stderr,
                     )
+            if all_prices:
+                row["median_price"] = round(_median(all_prices), 2)
         finally:
             browser.close()
 
