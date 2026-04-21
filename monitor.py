@@ -1,4 +1,8 @@
-"""Scrape a StubHub event page: total + per-level listing counts + price range."""
+"""Scrape a StubHub event page: total + per-level counts + true per-level price range.
+
+Per-level prices: we click "Show more" on each class-filtered page until all listings are
+loaded, then take min/max across ALL listings in that class. Takes ~60-90s per run.
+"""
 
 from __future__ import annotations
 
@@ -20,8 +24,6 @@ VIEWPORT = {"width": 1440, "height": 900}
 
 DATA_CSV = Path(__file__).parent / "data.csv"
 
-# Sphere ticket classes. Stable for this event's lifetime.
-# Source: /index-data -> ticketClasses[*].{ticketClassId, name}
 TICKET_CLASSES: list[tuple[int, str, str]] = [
     (3788, "100 Level", "100"),
     (3803, "200 Level", "200"),
@@ -48,40 +50,150 @@ INDEX_DATA_RE = re.compile(
 )
 
 
-def fetch_index_data(page, url: str) -> dict | None:
-    """Navigate to url and return the parsed <script id="index-data"> JSON."""
+def parse_index_data(html: str) -> dict | None:
+    m = INDEX_DATA_RE.search(html)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(1))
+    except json.JSONDecodeError as exc:
+        print(f"warning: index-data parse failed: {exc}", file=sys.stderr)
+        return None
+
+
+def fetch_get(page, url: str) -> dict | None:
+    """Navigate to url (GET) and parse the index-data blob."""
     captured: dict[str, str] = {}
+    seen_urls: list[str] = []
 
     def on_response(resp):
-        if resp.url == url and "html" not in captured:
+        if resp.request.method != "GET":
+            return
+        seen_urls.append(resp.url)
+        ct = resp.headers.get("content-type", "")
+        if "text/html" in ct and "html" not in captured:
             try:
-                captured["html"] = resp.text()
-            except Exception as exc:
-                print(f"warning: failed to read response body for {url}: {exc}", file=sys.stderr)
+                body = resp.text()
+                if INDEX_DATA_RE.search(body):
+                    captured["html"] = body
+            except Exception:
+                pass
 
     page.on("response", on_response)
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=45_000)
     except Exception as exc:
-        print(f"warning: goto failed for {url}: {exc}", file=sys.stderr)
+        print(f"warning: goto {url}: {exc}", file=sys.stderr)
         page.remove_listener("response", on_response)
         return None
-    page.wait_for_timeout(1_500)
+    page.wait_for_timeout(2_500)
     page.remove_listener("response", on_response)
 
-    html = captured.get("html")
+    html = captured.get("html", "")
     if not html:
-        print(f"warning: no HTML captured for {url}", file=sys.stderr)
+        print(f"warning: no index-data HTML for {url}", file=sys.stderr)
+        print(f"  GET urls seen: {seen_urls[:5]}", file=sys.stderr)
         return None
-    m = INDEX_DATA_RE.search(html)
-    if not m:
-        print(f"warning: no index-data blob in {url}", file=sys.stderr)
-        return None
+    return parse_index_data(html)
+
+
+def dismiss_modal(page) -> None:
+    for sel in ['#modal-root button', '[aria-label*="Close" i]', 'button:has-text("Close")']:
+        try:
+            loc = page.locator(sel).first
+            if loc.count() > 0:
+                loc.click(timeout=1_500)
+                break
+        except Exception:
+            pass
     try:
-        return json.loads(m.group(1))
-    except json.JSONDecodeError as exc:
-        print(f"warning: index-data JSON parse failed: {exc}", file=sys.stderr)
-        return None
+        page.keyboard.press("Escape")
+    except Exception:
+        pass
+
+
+def collect_all_prices(page, url: str) -> tuple[int | None, list[float]]:
+    """Load class-filtered URL, click Show More until exhausted, return (total, prices)."""
+    prices: list[float] = []
+    post_responses: list[str] = []
+    html_holder: dict[str, str] = {}
+
+    def on_response(resp):
+        if resp.request.method == "GET" and "html" not in html_holder:
+            ct = resp.headers.get("content-type", "")
+            if "text/html" in ct:
+                try:
+                    body = resp.text()
+                    if INDEX_DATA_RE.search(body):
+                        html_holder["html"] = body
+                except Exception:
+                    pass
+        if resp.request.method == "POST" and "phish-las-vegas" in resp.url:
+            try:
+                post_responses.append(resp.text())
+            except Exception:
+                pass
+
+    page.on("response", on_response)
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+    except Exception as exc:
+        print(f"warning: goto {url}: {exc}", file=sys.stderr)
+        page.remove_listener("response", on_response)
+        return None, []
+    page.wait_for_timeout(3_000)
+
+    data = parse_index_data(html_holder.get("html") or "")
+    if not data:
+        page.remove_listener("response", on_response)
+        return None, []
+    grid = data.get("grid") or {}
+    total = grid.get("totalFilteredListings")
+    for item in grid.get("items") or []:
+        rp = item.get("rawPrice")
+        if isinstance(rp, (int, float)):
+            prices.append(rp)
+
+    if not total or total <= len(prices):
+        page.remove_listener("response", on_response)
+        return total, prices
+
+    dismiss_modal(page)
+    for y in (500, 1500, 2500, 3500):
+        try:
+            page.evaluate(f"window.scrollTo(0, {y})")
+        except Exception:
+            break
+        page.wait_for_timeout(400)
+
+    max_clicks = (total + 9) // 10 + 1  # small buffer
+    for i in range(max_clicks):
+        try:
+            btn = page.locator('button:has-text("Show more")').first
+            if btn.count() == 0:
+                break
+            btn.click(force=True, timeout=5_000)
+            page.wait_for_timeout(1_100)
+            page.evaluate("window.scrollBy(0, 1500)")
+            page.wait_for_timeout(250)
+        except Exception as exc:
+            print(f"warning: show-more click {i+1}: {exc}", file=sys.stderr)
+            break
+
+    page.remove_listener("response", on_response)
+
+    for rt in post_responses:
+        try:
+            d = json.loads(rt)
+        except Exception:
+            continue
+        items = d.get("items") or d.get("grid", {}).get("items") or []
+        for item in items:
+            rp = item.get("rawPrice")
+            if isinstance(rp, (int, float)):
+                prices.append(rp)
+
+    return total, prices
 
 
 def price_range_from_histogram(data: dict) -> tuple[float | None, float | None]:
@@ -105,36 +217,31 @@ def scrape() -> dict:
             ctx = browser.new_context(user_agent=USER_AGENT, viewport=VIEWPORT)
             page = ctx.new_page()
 
-            base = fetch_index_data(page, EVENT_URL)
+            base = fetch_get(page, EVENT_URL)
             if base:
                 row["total_listings"] = base.get("totalListings")
                 row["available_tickets"] = base.get("availableTickets")
-                min_p, max_p = price_range_from_histogram(base)
-                row["min_price"] = min_p
-                row["max_price"] = max_p
+                mn, mx = price_range_from_histogram(base)
+                row["min_price"] = mn
+                row["max_price"] = mx
 
             for tc_id, tc_name, key in TICKET_CLASSES:
-                # quantity=0 → include listings of any size (single + pairs + groups)
                 url = f"{EVENT_URL}?ticketClasses={tc_id}&quantity=0"
-                d = fetch_index_data(page, url)
-                if not d:
-                    continue
-                grid = d.get("grid") or {}
-                count = grid.get("totalFilteredListings")
-                if count is not None:
-                    row[f"count_{key}"] = count
-                else:
-                    print(f"warning: no totalFilteredListings for {tc_name}", file=sys.stderr)
-                # Per-class price range from visible items (sample of top 10 recommended)
-                items = grid.get("items") or []
-                prices = [i.get("rawPrice") for i in items if isinstance(i.get("rawPrice"), (int, float))]
+                total, prices = collect_all_prices(page, url)
+                if total is not None:
+                    row[f"count_{key}"] = total
                 if prices:
                     row[f"min_{key}"] = round(min(prices), 2)
                     row[f"max_{key}"] = round(max(prices), 2)
+                    print(
+                        f"  {tc_name}: {total} listings, "
+                        f"captured {len(prices)} prices, "
+                        f"${min(prices):.2f} - ${max(prices):.2f}",
+                        file=sys.stderr,
+                    )
         finally:
             browser.close()
 
-    # Derive "other" bucket (Suites, zone tickets, etc. not in the 5 named levels).
     per_level_sum = sum(
         row[f"count_{key}"] for _, _, key in TICKET_CLASSES
         if isinstance(row[f"count_{key}"], int)
