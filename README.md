@@ -35,16 +35,16 @@ StubHub server-renders an `<script id="index-data" type="application/json">` blo
 
 If StubHub changes the embedded-data schema, the thing to retune is `fetch_index_data()` + the field paths in `scrape()`.
 
-## Local dashboard
+## Dashboard
 
-For an interactive view: open `dashboard.html` via a local HTTP server (required so `fetch('data.csv')` works in the browser):
+Live dashboard: **https://alexandergiles.github.io/stubhub-monitor/** — hosted on GitHub Pages, auto-refreshes every 60 seconds, pulls directly from the committed `data.csv`.
+
+To run locally instead:
 
 ```bash
 python -m http.server 8765
-# then open http://127.0.0.1:8765/dashboard.html
+# then open http://127.0.0.1:8765/
 ```
-
-Auto-refreshes every 60 seconds.
 
 ## Note on StubHub ToS
 
