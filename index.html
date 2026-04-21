@@ -150,7 +150,7 @@
 
   <div class="section rule-bottom">
     <div class="section-head">
-      <div>MEDIAN PRICE · LAST 72H · +48H FORECAST</div>
+      <div>GET-IN PRICE · FULL HISTORY · +48H FORECAST</div>
       <div class="legend">
         <span><span style="color:var(--accent-buy)">━</span> actual</span>
         <span><span style="color:var(--accent-wait)">┉</span> forecast</span>
@@ -286,14 +286,15 @@ function linearRegress(xs, ys) {
 }
 
 function computeForecast(rows) {
-  const withMed = rows.filter(r => num(r.median_price) != null);
-  if (withMed.length < 3) return null;
-  const cutoff = new Date(withMed[withMed.length - 1].timestamp_utc).getTime() - 72 * 3600000;
-  const recent = withMed.filter(r => new Date(r.timestamp_utc).getTime() >= cutoff);
+  // Forecast uses get-in (min) price since we have ~130 days of history for it.
+  const withMin = rows.filter(r => num(r.min_price) != null);
+  if (withMin.length < 3) return null;
+  const cutoff = new Date(withMin[withMin.length - 1].timestamp_utc).getTime() - 72 * 3600000;
+  const recent = withMin.filter(r => new Date(r.timestamp_utc).getTime() >= cutoff);
   if (recent.length < 3) return null;
   const t0 = new Date(recent[0].timestamp_utc).getTime();
   const xs = recent.map(r => (new Date(r.timestamp_utc).getTime() - t0) / 3600000);
-  const ys = recent.map(r => +r.median_price);
+  const ys = recent.map(r => +r.min_price);
   const fit = linearRegress(xs, ys);
   if (!fit) return null;
   const tLast = xs[xs.length - 1];
@@ -304,10 +305,10 @@ function computeForecast(rows) {
     const widen = Math.max(5, fit.residualStd * (1 + h / 24));
     forecastPts.push({ tsMs: t0 + x * 3600000, median: y, low: y - widen, high: y + widen });
   }
-  const currentMed = ys[ys.length - 1];
+  const currentMin = ys[ys.length - 1];
   const projected48h = fit.slope * (tLast + 48) + fit.intercept;
-  const fc48Pct = currentMed === 0 ? 0 : ((projected48h - currentMed) / currentMed) * 100;
-  return { forecastPts, fc48Pct, r2: fit.r2, slope: fit.slope, currentMed };
+  const fc48Pct = currentMin === 0 ? 0 : ((projected48h - currentMin) / currentMin) * 100;
+  return { forecastPts, fc48Pct, r2: fit.r2, slope: fit.slope, currentMin };
 }
 
 function computeVerdict(fc) {
@@ -339,29 +340,32 @@ function renderMainChart(rows, fc) {
   const svg = document.getElementById("mainChart");
   svg.innerHTML = "";
   const w = 720, h = 200, padL = 44, padR = 20, padT = 20, padB = 20;
-  const withMed = rows.filter(r => num(r.median_price) != null);
-  if (withMed.length < 2) return;
-  const latestMs = new Date(withMed[withMed.length - 1].timestamp_utc).getTime();
-  const startMs = latestMs - 72 * 3600000;
+  const withMin = rows.filter(r => num(r.min_price) != null);
+  if (withMin.length < 2) return;
+  const latestMs = new Date(withMin[withMin.length - 1].timestamp_utc).getTime();
+  // Show full history if we have it, but cap at the oldest point that's more than 72h old
+  const startMs = Math.min(
+    new Date(withMin[0].timestamp_utc).getTime(),
+    latestMs - 72 * 3600000
+  );
   const endMs = fc ? fc.forecastPts[fc.forecastPts.length - 1].tsMs : latestMs;
 
-  const actualPts = withMed
+  const actualPts = withMin
     .filter(r => new Date(r.timestamp_utc).getTime() >= startMs)
     .map(r => ({
       tsMs: new Date(r.timestamp_utc).getTime(),
-      med: +r.median_price,
-      low: num(r.min_price),
-      high: num(r.max_price),
+      min: +r.min_price,
+      max: num(r.max_price),
     }));
   if (!actualPts.length) return;
 
   const fcPts = fc ? fc.forecastPts : [];
   const allY = [
-    ...actualPts.flatMap(p => [p.med, p.low, p.high]).filter(v => v != null),
+    ...actualPts.flatMap(p => [p.min, p.max]).filter(v => v != null),
     ...fcPts.flatMap(p => [p.median, p.low, p.high]),
   ];
-  const yMin = Math.min(...allY) * 0.95;
-  const yMax = Math.max(...allY) * 1.05;
+  const yMin = Math.min(...allY) * 0.9;
+  const yMax = Math.max(...allY) * 1.1;
   const X = ts => padL + ((ts - startMs) / (endMs - startMs)) * (w - padL - padR);
   const Y = v => padT + (1 - (v - yMin) / (yMax - yMin)) * (h - padT - padB);
 
@@ -371,29 +375,22 @@ function renderMainChart(rows, fc) {
       `<line x1="${padL}" x2="${w - padR}" y1="${y}" y2="${y}" stroke="#1f2937" stroke-dasharray="2 4"/>`);
   }
 
-  if (actualPts.every(p => p.low != null && p.high != null)) {
-    const hi = actualPts.map(p => `${X(p.tsMs)},${Y(p.high)}`).join(" L");
-    const lo = actualPts.slice().reverse().map(p => `${X(p.tsMs)},${Y(p.low)}`).join(" L");
-    svg.insertAdjacentHTML("beforeend",
-      `<path d="M${hi} L${lo} Z" fill="rgba(74,222,128,0.08)" />`);
-  }
-
   if (fcPts.length) {
     const anchor = actualPts[actualPts.length - 1];
     const hi = fcPts.map(p => `${X(p.tsMs)},${Y(p.high)}`).join(" L");
     const lo = fcPts.slice().reverse().map(p => `${X(p.tsMs)},${Y(p.low)}`).join(" L");
     svg.insertAdjacentHTML("beforeend",
-      `<path d="M${X(anchor.tsMs)},${Y(anchor.med)} L${hi} L${lo} Z" fill="rgba(251,191,36,0.08)" />`);
+      `<path d="M${X(anchor.tsMs)},${Y(anchor.min)} L${hi} L${lo} Z" fill="rgba(251,191,36,0.08)" />`);
   }
 
-  const medPath = actualPts.map((p, i) =>
-    `${i === 0 ? "M" : "L"}${X(p.tsMs)},${Y(p.med)}`).join(" ");
+  const actualPath = actualPts.map((p, i) =>
+    `${i === 0 ? "M" : "L"}${X(p.tsMs)},${Y(p.min)}`).join(" ");
   svg.insertAdjacentHTML("beforeend",
-    `<path d="${medPath}" fill="none" stroke="#4ade80" stroke-width="1.5"/>`);
+    `<path d="${actualPath}" fill="none" stroke="#4ade80" stroke-width="1.5"/>`);
 
   if (fcPts.length) {
     const anchor = actualPts[actualPts.length - 1];
-    const fcPath = `M${X(anchor.tsMs)},${Y(anchor.med)} ` +
+    const fcPath = `M${X(anchor.tsMs)},${Y(anchor.min)} ` +
       fcPts.map(p => `L${X(p.tsMs)},${Y(p.median)}`).join(" ");
     svg.insertAdjacentHTML("beforeend",
       `<path d="${fcPath}" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="3 2"/>`);
@@ -539,12 +536,15 @@ function renderTickLog(rows) {
 async function refresh() {
   try {
     const resp = await fetch("data.csv?_=" + Date.now());
+    // Keep ALL rows with any signal (historical has only min_price; recent has counts too).
     const rows = parseCsv(await resp.text())
-      .filter(r => num(r.total_listings) != null)
+      .filter(r => num(r.total_listings) != null || num(r.min_price) != null)
       .sort((a, b) => a.timestamp_utc.localeCompare(b.timestamp_utc));
     if (!rows.length) return;
-    const latest = rows[rows.length - 1];
-    const prev24 = atOrBefore(rows, latest, 24);
+    // For "latest" and level/tick-log rendering, use rows with full listing data.
+    const withCounts = rows.filter(r => num(r.total_listings) != null);
+    const latest = withCounts.length ? withCounts[withCounts.length - 1] : rows[rows.length - 1];
+    const prev24 = atOrBefore(withCounts.length ? withCounts : rows, latest, 24);
 
     document.getElementById("ts").textContent = latest.timestamp_utc.replace("+00:00"," UTC");
 
@@ -586,8 +586,8 @@ async function refresh() {
 
     renderMainChart(rows, fc);
     renderBowl();
-    renderLevels(rows, latest);
-    renderTickLog(rows);
+    renderLevels(withCounts.length ? withCounts : rows, latest);
+    renderTickLog(withCounts.length ? withCounts : rows);
 
     document.getElementById("conn").textContent = "CONN OK";
     document.getElementById("conn").className = "ok";
