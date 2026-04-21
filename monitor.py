@@ -269,6 +269,25 @@ def scrape() -> dict:
 
 
 def append_row(row: dict) -> None:
+    if DATA_CSV.exists():
+        with DATA_CSV.open() as f:
+            reader = csv.reader(f)
+            existing_header = next(reader, None)
+            existing_rows = list(reader)
+        if existing_header != CSV_COLUMNS:
+            # Schema changed — rewrite with new header, preserving old rows by column name.
+            print(
+                f"warning: CSV schema mismatch ({len(existing_header or [])} cols → "
+                f"{len(CSV_COLUMNS)}); migrating.",
+                file=sys.stderr,
+            )
+            with DATA_CSV.open("w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(CSV_COLUMNS)
+                for old_row in existing_rows:
+                    old_map = dict(zip(existing_header or [], old_row))
+                    writer.writerow([old_map.get(c, "") for c in CSV_COLUMNS])
+
     new_file = not DATA_CSV.exists()
     with DATA_CSV.open("a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
