@@ -70,6 +70,24 @@
   .section-head .legend { display: flex; gap: 16px; }
   .section-head .legend span { color: var(--text-muted); }
 
+  /* Range presets */
+  .range-presets { display: flex; gap: 0; margin-top: 6px; border: 1px solid var(--border); }
+  .range-presets button {
+    flex: 0 0 auto;
+    background: transparent; color: var(--text-muted);
+    border: none; border-right: 1px solid var(--border);
+    padding: 6px 14px;
+    font-family: inherit; font-size: 10px; letter-spacing: 1px;
+    text-transform: uppercase; cursor: pointer;
+  }
+  .range-presets button:last-child { border-right: none; }
+  .range-presets button:hover { background: rgba(251,191,36,0.04); color: var(--text-primary); }
+  .range-presets button.active { background: rgba(251,191,36,0.08); color: var(--accent-wait); }
+
+  /* Range slider */
+  #rangeSlider { width: 100%; height: 44px; display: block; margin-top: 8px; cursor: grab; user-select: none; }
+  #rangeSlider.grabbing { cursor: grabbing; }
+
   .bowl-levels { display: grid; grid-template-columns: 300px 1fr; }
   .bowl-levels > .bowl-col { padding: 16px; border-right: 1px solid var(--border); }
   .bowl-inset { background: var(--bg-deep); padding: 10px; border: 1px solid var(--border); }
@@ -150,13 +168,21 @@
 
   <div class="section rule-bottom">
     <div class="section-head">
-      <div>GET-IN PRICE · FULL HISTORY · +48H FORECAST</div>
+      <div id="chartTitle">GET-IN PRICE · ALL · +48H FORECAST</div>
       <div class="legend">
         <span><span style="color:var(--accent-buy)">━</span> actual</span>
         <span><span style="color:var(--accent-wait)">┉</span> forecast</span>
       </div>
     </div>
     <svg id="mainChart" viewBox="0 0 720 200" width="100%" style="display:block;"></svg>
+    <div class="range-presets" id="rangePresets">
+      <button data-range="1D">1D</button>
+      <button data-range="1W">1W</button>
+      <button data-range="1M">1M</button>
+      <button data-range="3M">3M</button>
+      <button data-range="ALL" class="active">ALL</button>
+    </div>
+    <svg id="rangeSlider" viewBox="0 0 720 44"></svg>
   </div>
 
   <div class="bowl-levels rule-bottom">
@@ -203,6 +229,7 @@
 </div>
 
 <script>
+let _presetsReady = false;
 const LEVELS = [
   { id: "100",   key: "100",   color: "#2563eb" },
   { id: "200",   key: "200",   color: "#7c3aed" },
@@ -336,6 +363,9 @@ function deltaPct(cur, prev) {
   return ((cur - prev) / prev) * 100;
 }
 
+// Range state (ms). Set by slider or preset buttons. endMs may extend past latest for forecast.
+const rangeState = { startMs: null, endMs: null };
+
 function renderMainChart(rows, fc) {
   const svg = document.getElementById("mainChart");
   svg.innerHTML = "";
@@ -343,15 +373,19 @@ function renderMainChart(rows, fc) {
   const withMin = rows.filter(r => num(r.min_price) != null);
   if (withMin.length < 2) return;
   const latestMs = new Date(withMin[withMin.length - 1].timestamp_utc).getTime();
-  // Show full history if we have it, but cap at the oldest point that's more than 72h old
-  const startMs = Math.min(
-    new Date(withMin[0].timestamp_utc).getTime(),
-    latestMs - 72 * 3600000
-  );
-  const endMs = fc ? fc.forecastPts[fc.forecastPts.length - 1].tsMs : latestMs;
+
+  const startMs = rangeState.startMs ?? new Date(withMin[0].timestamp_utc).getTime();
+  const includeForecast = fc && (rangeState.endMs == null || rangeState.endMs >= latestMs);
+  const rawEndMs = rangeState.endMs ?? latestMs;
+  const endMs = includeForecast
+    ? Math.max(rawEndMs, fc.forecastPts[fc.forecastPts.length - 1].tsMs)
+    : rawEndMs;
 
   const actualPts = withMin
-    .filter(r => new Date(r.timestamp_utc).getTime() >= startMs)
+    .filter(r => {
+      const t = new Date(r.timestamp_utc).getTime();
+      return t >= startMs && t <= rawEndMs;
+    })
     .map(r => ({
       tsMs: new Date(r.timestamp_utc).getTime(),
       min: +r.min_price,
@@ -359,7 +393,7 @@ function renderMainChart(rows, fc) {
     }));
   if (!actualPts.length) return;
 
-  const fcPts = fc ? fc.forecastPts : [];
+  const fcPts = includeForecast ? fc.forecastPts : [];
   const allY = [
     ...actualPts.flatMap(p => [p.min, p.max]).filter(v => v != null),
     ...fcPts.flatMap(p => [p.median, p.low, p.high]),
@@ -396,19 +430,199 @@ function renderMainChart(rows, fc) {
       `<path d="${fcPath}" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="3 2"/>`);
   }
 
-  svg.insertAdjacentHTML("beforeend",
-    `<line x1="${X(latestMs)}" x2="${X(latestMs)}" y1="${padT}" y2="${h - padB}" stroke="#64748b" stroke-dasharray="1 3"/>`);
-  svg.insertAdjacentHTML("beforeend",
-    `<text x="${X(latestMs) + 4}" y="${padT + 8}" font-size="9" fill="#94a3b8" font-family="JetBrains Mono, monospace">NOW</text>`);
+  if (latestMs >= startMs && latestMs <= endMs) {
+    svg.insertAdjacentHTML("beforeend",
+      `<line x1="${X(latestMs)}" x2="${X(latestMs)}" y1="${padT}" y2="${h - padB}" stroke="#64748b" stroke-dasharray="1 3"/>`);
+    svg.insertAdjacentHTML("beforeend",
+      `<text x="${X(latestMs) + 4}" y="${padT + 8}" font-size="9" fill="#94a3b8" font-family="JetBrains Mono, monospace">NOW</text>`);
+  }
   if (fcPts.length) {
     svg.insertAdjacentHTML("beforeend",
       `<text x="${w - padR - 2}" y="${padT + 8}" font-size="9" fill="#fbbf24" font-family="JetBrains Mono, monospace" text-anchor="end">+48H FORECAST</text>`);
+  }
+
+  // X-axis date labels
+  const spanMs = endMs - startMs;
+  const dayMs = 86_400_000;
+  const useHours = spanMs < dayMs * 2;
+  const tickCount = 4;
+  for (let i = 0; i <= tickCount; i++) {
+    const ts = startMs + (i / tickCount) * spanMs;
+    const d = new Date(ts);
+    const label = useHours
+      ? `${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")} ${String(d.getUTCHours()).padStart(2,"0")}:${String(d.getUTCMinutes()).padStart(2,"0")}`
+      : `${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
+    svg.insertAdjacentHTML("beforeend",
+      `<text x="${X(ts)}" y="${h - 4}" font-size="9" font-family="JetBrains Mono, monospace" fill="#64748b" text-anchor="middle">${label}</text>`);
   }
 
   for (const v of [yMax, (yMin + yMax) / 2, yMin]) {
     svg.insertAdjacentHTML("beforeend",
       `<text x="${padL - 6}" y="${Y(v) + 3}" font-size="9" font-family="JetBrains Mono, monospace" fill="#64748b" text-anchor="end">$${Math.round(v)}</text>`);
   }
+}
+
+// ---------- Range slider ----------
+let _sliderRows = [];
+let _sliderExtent = { dataStart: 0, dataEnd: 0 };
+let _onRangeChange = null;
+
+function renderRangeSlider(rows, onChange) {
+  _onRangeChange = onChange;
+  const svg = document.getElementById("rangeSlider");
+  svg.innerHTML = "";
+  const w = 720, h = 44, padL = 44, padR = 20, padT = 4, padB = 14;
+
+  const withMin = rows.filter(r => num(r.min_price) != null);
+  if (withMin.length < 2) return;
+  _sliderRows = withMin;
+  _sliderExtent.dataStart = new Date(withMin[0].timestamp_utc).getTime();
+  _sliderExtent.dataEnd = new Date(withMin[withMin.length - 1].timestamp_utc).getTime();
+  if (rangeState.startMs == null) rangeState.startMs = _sliderExtent.dataStart;
+  if (rangeState.endMs == null) rangeState.endMs = _sliderExtent.dataEnd;
+
+  const prices = withMin.map(r => +r.min_price);
+  const yMin = Math.min(...prices), yMax = Math.max(...prices);
+  const X = ts => padL + (ts - _sliderExtent.dataStart) /
+    (_sliderExtent.dataEnd - _sliderExtent.dataStart) * (w - padL - padR);
+  const Y = v => padT + (1 - (v - yMin) / ((yMax - yMin) || 1)) * (h - padT - padB);
+
+  // Background line — full series
+  const path = withMin.map((r, i) => {
+    const t = new Date(r.timestamp_utc).getTime();
+    return `${i === 0 ? "M" : "L"}${X(t)},${Y(+r.min_price)}`;
+  }).join(" ");
+  svg.insertAdjacentHTML("beforeend",
+    `<path d="${path}" fill="none" stroke="#334155" stroke-width="1"/>`);
+
+  // Axis track
+  svg.insertAdjacentHTML("beforeend",
+    `<line x1="${padL}" x2="${w - padR}" y1="${h - padB}" y2="${h - padB}" stroke="#1f2937"/>`);
+
+  // Selection window
+  const xStart = Math.max(padL, X(rangeState.startMs));
+  const xEnd = Math.min(w - padR, X(rangeState.endMs));
+  svg.insertAdjacentHTML("beforeend",
+    `<rect x="${xStart}" y="${padT}" width="${xEnd - xStart}" height="${h - padT - padB}" ` +
+    `fill="rgba(251,191,36,0.10)" stroke="#fbbf24" stroke-width="1" data-role="window" style="cursor:grab;"/>`);
+
+  // Handles
+  const handleH = 14;
+  const handleY = padT + (h - padT - padB) / 2 - handleH / 2;
+  for (const side of ["start", "end"]) {
+    const x = side === "start" ? xStart : xEnd;
+    svg.insertAdjacentHTML("beforeend",
+      `<rect x="${x - 3}" y="${handleY}" width="6" height="${handleH}" ` +
+      `fill="#fbbf24" data-role="handle-${side}" style="cursor:ew-resize;"/>`);
+  }
+
+  // Date labels at slider ends
+  const fmtDate = ts => {
+    const d = new Date(ts);
+    return `${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
+  };
+  svg.insertAdjacentHTML("beforeend",
+    `<text x="${padL}" y="${h - 2}" font-size="9" fill="#64748b" font-family="JetBrains Mono, monospace">${fmtDate(_sliderExtent.dataStart)}</text>`);
+  svg.insertAdjacentHTML("beforeend",
+    `<text x="${w - padR}" y="${h - 2}" font-size="9" fill="#64748b" font-family="JetBrains Mono, monospace" text-anchor="end">${fmtDate(_sliderExtent.dataEnd)}</text>`);
+
+  attachSliderDrag(svg, X);
+}
+
+function attachSliderDrag(svg, X) {
+  let drag = null;
+  const w = 720, padL = 44, padR = 20;
+  const xToMs = px => {
+    const frac = (px - padL) / (w - padL - padR);
+    return _sliderExtent.dataStart + frac * (_sliderExtent.dataEnd - _sliderExtent.dataStart);
+  };
+  function pt(e) {
+    const rect = svg.getBoundingClientRect();
+    const scale = w / rect.width;
+    return { x: (e.clientX - rect.left) * scale };
+  }
+  svg.addEventListener("mousedown", e => {
+    const role = e.target.getAttribute && e.target.getAttribute("data-role");
+    const p = pt(e);
+    if (role === "handle-start" || role === "handle-end") {
+      drag = { type: role };
+    } else if (role === "window") {
+      drag = { type: "window", anchorMs: xToMs(p.x), startMs0: rangeState.startMs, endMs0: rangeState.endMs };
+    } else {
+      // Click on empty area: move nearest edge
+      const mid = (rangeState.startMs + rangeState.endMs) / 2;
+      const m = xToMs(p.x);
+      drag = { type: m < mid ? "handle-start" : "handle-end" };
+    }
+    svg.classList.add("grabbing");
+    document.body.style.userSelect = "none";
+  });
+  window.addEventListener("mousemove", e => {
+    if (!drag) return;
+    const p = pt(e);
+    const ms = xToMs(p.x);
+    const minSpan = 3 * 3600000;  // 3h min window
+    if (drag.type === "handle-start") {
+      rangeState.startMs = Math.max(_sliderExtent.dataStart, Math.min(rangeState.endMs - minSpan, ms));
+    } else if (drag.type === "handle-end") {
+      rangeState.endMs = Math.min(_sliderExtent.dataEnd, Math.max(rangeState.startMs + minSpan, ms));
+    } else if (drag.type === "window") {
+      const delta = ms - drag.anchorMs;
+      const span = drag.endMs0 - drag.startMs0;
+      let newStart = drag.startMs0 + delta;
+      let newEnd = drag.endMs0 + delta;
+      if (newStart < _sliderExtent.dataStart) { newStart = _sliderExtent.dataStart; newEnd = newStart + span; }
+      if (newEnd > _sliderExtent.dataEnd) { newEnd = _sliderExtent.dataEnd; newStart = newEnd - span; }
+      rangeState.startMs = newStart;
+      rangeState.endMs = newEnd;
+    }
+    clearActivePreset();
+    _onRangeChange && _onRangeChange();
+  });
+  window.addEventListener("mouseup", () => {
+    if (!drag) return;
+    drag = null;
+    svg.classList.remove("grabbing");
+    document.body.style.userSelect = "";
+  });
+}
+
+function clearActivePreset() {
+  document.querySelectorAll("#rangePresets button").forEach(b => b.classList.remove("active"));
+}
+
+function setupRangePresets() {
+  document.querySelectorAll("#rangePresets button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const r = btn.getAttribute("data-range");
+      const end = _sliderExtent.dataEnd;
+      const spans = { "1D": 86400000, "1W": 7*86400000, "1M": 30*86400000, "3M": 90*86400000 };
+      if (r === "ALL") {
+        rangeState.startMs = _sliderExtent.dataStart;
+        rangeState.endMs = _sliderExtent.dataEnd;
+      } else {
+        const span = spans[r];
+        rangeState.startMs = Math.max(_sliderExtent.dataStart, end - span);
+        rangeState.endMs = end;
+      }
+      clearActivePreset();
+      btn.classList.add("active");
+      _onRangeChange && _onRangeChange();
+    });
+  });
+}
+
+function updateChartTitle() {
+  const end = rangeState.endMs, start = rangeState.startMs;
+  if (!start || !end) return;
+  const days = (end - start) / 86400000;
+  let label;
+  if (days <= 1.5) label = "1D";
+  else if (days <= 9) label = "1W";
+  else if (days <= 35) label = "1M";
+  else if (days <= 100) label = "3M";
+  else label = "ALL";
+  document.getElementById("chartTitle").textContent = `GET-IN PRICE · ${label} · +48H FORECAST`;
 }
 
 let hlState = null;
@@ -584,7 +798,12 @@ async function refresh() {
     document.getElementById("kMinD").innerHTML = minDP != null
       ? `<span class="${classForDelta(minDP)}">${pct(minDP)} 24h</span>` : "—";
 
-    renderMainChart(rows, fc);
+    // Render chart + slider (slider sets up state if first time)
+    const rerender = () => { renderMainChart(rows, fc); updateChartTitle(); };
+    renderRangeSlider(rows, rerender);
+    if (!_presetsReady) { setupRangePresets(); _presetsReady = true; }
+    rerender();
+
     renderBowl();
     renderLevels(withCounts.length ? withCounts : rows, latest);
     renderTickLog(withCounts.length ? withCounts : rows);
